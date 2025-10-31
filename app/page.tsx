@@ -595,7 +595,7 @@ export default function ImageEditor() {
     setNewTextInput("")
   }
 
-  const handleTextClick = (e: React.MouseEvent, textId: string) => {
+  const handleTextClick = (e: React.MouseEvent | React.TouchEvent, textId: string) => {
     e.stopPropagation()
     if (draggingTextId) return // Don't select if we're dragging
     
@@ -611,18 +611,28 @@ export default function ImageEditor() {
     }
   }
 
-  const handleTextMouseDown = (e: React.MouseEvent, textId: string) => {
+  const handleTextMouseDown = (e: React.MouseEvent | React.TouchEvent, textId: string) => {
     e.stopPropagation()
     setDraggingTextId(textId)
     setSelectedTextId(null) // Deselect while dragging
-    textDragStartRef.current = { x: e.clientX, y: e.clientY }
+    
+    // Get clientX and clientY from either mouse or touch event
+    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX
+    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY
+    textDragStartRef.current = { x: clientX, y: clientY }
   }
 
-  const handleTextMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+  const handleTextMouseMove = (e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
     if (!draggingTextId || !textDragStartRef.current) return
 
-    let deltaX = e.clientX - textDragStartRef.current.x
-    let deltaY = e.clientY - textDragStartRef.current.y
+    // Get clientX and clientY from either mouse or touch event
+    const clientX = 'touches' in e ? e.touches[0]?.clientX : e.clientX
+    const clientY = 'touches' in e ? e.touches[0]?.clientY : e.clientY
+    
+    if (clientX === undefined || clientY === undefined) return
+
+    let deltaX = clientX - textDragStartRef.current.x
+    let deltaY = clientY - textDragStartRef.current.y
     
     // Apply rotation transformation to deltas if image is rotated
     if (rotation !== 0) {
@@ -646,7 +656,7 @@ export default function ImageEditor() {
       }),
     )
 
-    textDragStartRef.current = { x: e.clientX, y: e.clientY }
+    textDragStartRef.current = { x: clientX, y: clientY }
   }
 
   const handleTextMouseUp = () => {
@@ -1311,6 +1321,13 @@ export default function ImageEditor() {
             onMouseMove={isTextMode ? handleTextMouseMove : undefined}
             onMouseUp={isTextMode ? handleTextMouseUp : undefined}
             onMouseLeave={isTextMode ? handleTextMouseUp : undefined}
+            onTouchMove={isTextMode ? (e) => {
+              if (draggingTextId) {
+                e.preventDefault()
+                handleTextMouseMove(e as any)
+              }
+            } : undefined}
+            onTouchEnd={isTextMode ? handleTextMouseUp : undefined}
           >
             <div className="relative flex-shrink-0 min-h-full flex items-center justify-center">
               <div className="relative flex-shrink-0">
@@ -1406,6 +1423,7 @@ export default function ImageEditor() {
                         // Counter-rotate text to keep it upright when in text mode
                         transform: isTextMode ? `rotate(${-rotation}deg)` : "none",
                         transformOrigin: "center",
+                        touchAction: "none",
                       }}
                       onClick={(e) => {
                         if (isTextMode && !draggingTextId) {
@@ -1418,6 +1436,24 @@ export default function ImageEditor() {
                         }
                       }}
                       onMouseUp={isTextMode ? handleTextMouseUp : undefined}
+                      onTouchStart={(e) => {
+                        if (isTextMode) {
+                          e.stopPropagation()
+                          if (!selectedTextId || selectedTextId !== textEl.id) {
+                            // First tap - select the text
+                            handleTextClick(e as any, textEl.id)
+                          } else {
+                            // Already selected - start dragging
+                            handleTextMouseDown(e as any, textEl.id)
+                          }
+                        }
+                      }}
+                      onTouchEnd={(e) => {
+                        if (isTextMode) {
+                          e.stopPropagation()
+                          handleTextMouseUp()
+                        }
+                      }}
                     >
                       <div
                         style={{
@@ -1444,8 +1480,10 @@ export default function ImageEditor() {
                         // Counter-rotate to keep input upright when image is rotated
                         transform: `rotate(${-rotation}deg)`,
                         transformOrigin: "center",
+                        touchAction: "auto",
                       }}
                       onClick={(e) => e.stopPropagation()}
+                      onTouchStart={(e) => e.stopPropagation()}
                     >
                       <div className="flex items-center gap-2 bg-card border-2 border-primary rounded px-2 py-1 shadow-lg">
                         <input
