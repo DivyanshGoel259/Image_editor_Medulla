@@ -71,10 +71,12 @@ export default function ImageEditor() {
   const [textElements, setTextElements] = useState<TextElement[]>([])
   const [textFontSize, setTextFontSize] = useState(24)
   const [textColor, setTextColor] = useState("#ffffff")
-  const [textFont, setTextFont] = useState("Arial")
-  const [selectedTextId, setSelectedTextId] = useState<string | null>(null)
-  const [editingTextId, setEditingTextId] = useState<string | null>(null)
-  const [draggingTextId, setDraggingTextId] = useState<string | null>(null)
+  const [textFont, setTextFont] = useState("Arial") // Added font selection
+  const [selectedTextId, setSelectedTextId] = useState<string | null>(null) // Track which text is selected
+  const [editingTextId, setEditingTextId] = useState<string | null>(null) // Track which text is being edited inline
+  const [draggingTextId, setDraggingTextId] = useState<string | null>(null) // Track dragging text
+  const [addingTextAt, setAddingTextAt] = useState<{ x: number; y: number } | null>(null) // Position to add new text
+  const [newTextInput, setNewTextInput] = useState("") // Input for new text being added
 
   const [history, setHistory] = useState<HistoryState[]>([])
   const [historyIndex, setHistoryIndex] = useState(-1)
@@ -85,6 +87,7 @@ export default function ImageEditor() {
   const cropDragStartRef = useRef<{ x: number; y: number } | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const textDragStartRef = useRef<{ x: number; y: number } | null>(null) // For text dragging
+  const canvasWrapperRef = useRef<HTMLDivElement>(null) // For accurate crop coordinates on rotated images
 
   const addToHistory = (
     newImage: string | null,
@@ -307,9 +310,36 @@ export default function ImageEditor() {
     const canvas = drawingCanvasRef.current
     if (!canvas) return
 
-    const rect = canvas.getBoundingClientRect()
-    const x = e.clientX - rect.left
-    const y = e.clientY - rect.top
+    // Get the wrapper rect for accurate coordinates
+    const wrapper = canvasWrapperRef.current
+    if (!wrapper) return
+    
+    const wrapperRect = wrapper.getBoundingClientRect()
+    const dimensions = getCanvasDimensions()
+    
+    let x = e.clientX - wrapperRect.left
+    let y = e.clientY - wrapperRect.top
+    
+    // Apply coordinate transformation for rotation
+    if (rotation !== 0) {
+      const wrapperCenterX = wrapperRect.width / 2
+      const wrapperCenterY = wrapperRect.height / 2
+      const canvasCenterX = dimensions.width / 2
+      const canvasCenterY = dimensions.height / 2
+      
+      // Translate to wrapper center
+      const dx = x - wrapperCenterX
+      const dy = y - wrapperCenterY
+      
+      // Apply inverse rotation transformation
+      const angleRad = (-rotation * Math.PI) / 180
+      const rotatedX = dx * Math.cos(angleRad) - dy * Math.sin(angleRad)
+      const rotatedY = dx * Math.sin(angleRad) + dy * Math.cos(angleRad)
+      
+      // Translate to canvas space
+      x = rotatedX + canvasCenterX
+      y = rotatedY + canvasCenterY
+    }
 
     const ctx = canvas.getContext("2d")
     if (ctx) {
@@ -323,9 +353,36 @@ export default function ImageEditor() {
     const canvas = drawingCanvasRef.current
     if (!canvas) return
 
-    const rect = canvas.getBoundingClientRect()
-    const x = e.clientX - rect.left
-    const y = e.clientY - rect.top
+    // Get the wrapper rect for accurate coordinates
+    const wrapper = canvasWrapperRef.current
+    if (!wrapper) return
+    
+    const wrapperRect = wrapper.getBoundingClientRect()
+    const dimensions = getCanvasDimensions()
+    
+    let x = e.clientX - wrapperRect.left
+    let y = e.clientY - wrapperRect.top
+    
+    // Apply coordinate transformation for rotation
+    if (rotation !== 0) {
+      const wrapperCenterX = wrapperRect.width / 2
+      const wrapperCenterY = wrapperRect.height / 2
+      const canvasCenterX = dimensions.width / 2
+      const canvasCenterY = dimensions.height / 2
+      
+      // Translate to wrapper center
+      const dx = x - wrapperCenterX
+      const dy = y - wrapperCenterY
+      
+      // Apply inverse rotation transformation
+      const angleRad = (-rotation * Math.PI) / 180
+      const rotatedX = dx * Math.cos(angleRad) - dy * Math.sin(angleRad)
+      const rotatedY = dx * Math.sin(angleRad) + dy * Math.cos(angleRad)
+      
+      // Translate to canvas space
+      x = rotatedX + canvasCenterX
+      y = rotatedY + canvasCenterY
+    }
 
     const ctx = canvas.getContext("2d")
     if (ctx) {
@@ -343,19 +400,55 @@ export default function ImageEditor() {
   }
 
   const handleCanvasClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!isTextMode || editingTextId) return
+    if (!isTextMode || addingTextAt) return // Don't create new input if one already exists
     
-    // Get click position relative to the canvas
-    const rect = e.currentTarget.getBoundingClientRect()
-    const x = e.clientX - rect.left
-    const y = e.clientY - rect.top
+    e.stopPropagation() // Prevent event bubbling
+    
+    // Get the wrapper rect for accurate coordinates
+    const wrapper = canvasWrapperRef.current
+    if (!wrapper) return
+    
+    const wrapperRect = wrapper.getBoundingClientRect()
+    const dimensions = getCanvasDimensions()
+    
+    let x = e.clientX - wrapperRect.left
+    let y = e.clientY - wrapperRect.top
+    
+    // Apply coordinate transformation for rotation
+    if (rotation !== 0) {
+      const wrapperCenterX = wrapperRect.width / 2
+      const wrapperCenterY = wrapperRect.height / 2
+      const canvasCenterX = dimensions.width / 2
+      const canvasCenterY = dimensions.height / 2
+      
+      // Translate to wrapper center
+      const dx = x - wrapperCenterX
+      const dy = y - wrapperCenterY
+      
+      // Apply inverse rotation transformation
+      const angleRad = (-rotation * Math.PI) / 180
+      const rotatedX = dx * Math.cos(angleRad) - dy * Math.sin(angleRad)
+      const rotatedY = dx * Math.sin(angleRad) + dy * Math.cos(angleRad)
+      
+      // Translate to canvas space
+      x = rotatedX + canvasCenterX
+      y = rotatedY + canvasCenterY
+    }
 
-    // Create a new text element and start editing it immediately
+    // Start adding text at this position
+    setAddingTextAt({ x, y })
+    setNewTextInput("")
+    setSelectedTextId(null)
+  }
+
+  const confirmAddText = () => {
+    if (!uploadedImage || !newTextInput.trim() || !addingTextAt) return
+
     const newText: TextElement = {
       id: Date.now().toString(),
-      text: "Type here...",
-      x: x,
-      y: y,
+      text: newTextInput,
+      x: addingTextAt.x,
+      y: addingTextAt.y,
       fontSize: textFontSize,
       color: textColor,
       font: textFont,
@@ -363,15 +456,22 @@ export default function ImageEditor() {
 
     const newTexts = [...textElements, newText]
     setTextElements(newTexts)
-    setEditingTextId(newText.id)
-    setSelectedTextId(newText.id)
+    setNewTextInput("")
+    setAddingTextAt(null)
+    addToHistory(uploadedImage, imageSize, rotation, newTexts)
+  }
+
+  const cancelAddText = () => {
+    setAddingTextAt(null)
+    setNewTextInput("")
   }
 
   const handleTextClick = (e: React.MouseEvent, textId: string) => {
     e.stopPropagation()
-    if (draggingTextId || editingTextId) return
+    if (draggingTextId) return // Don't select if we're dragging
     
     setSelectedTextId(textId)
+    setAddingTextAt(null) // Cancel any text being added
     
     // Load the selected text properties into the toolbar
     const selectedText = textElements.find((t) => t.id === textId)
@@ -379,33 +479,6 @@ export default function ImageEditor() {
       setTextFontSize(selectedText.fontSize)
       setTextColor(selectedText.color)
       setTextFont(selectedText.font)
-    }
-  }
-
-  const handleTextDoubleClick = (e: React.MouseEvent, textId: string) => {
-    e.stopPropagation()
-    setEditingTextId(textId)
-    setSelectedTextId(textId)
-  }
-
-  const handleTextEdit = (textId: string, newText: string) => {
-    setTextElements(
-      textElements.map((t) => (t.id === textId ? { ...t, text: newText } : t))
-    )
-  }
-
-  const finishEditingText = () => {
-    if (editingTextId) {
-      const editedText = textElements.find((t) => t.id === editingTextId)
-      // If text is empty or default, remove it
-      if (!editedText || !editedText.text.trim() || editedText.text === "Type here...") {
-        const newTexts = textElements.filter((t) => t.id !== editingTextId)
-        setTextElements(newTexts)
-        addToHistory(uploadedImage, imageSize, rotation, newTexts)
-      } else {
-        addToHistory(uploadedImage, imageSize, rotation, textElements)
-      }
-      setEditingTextId(null)
     }
   }
 
@@ -419,8 +492,17 @@ export default function ImageEditor() {
   const handleTextMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!draggingTextId || !textDragStartRef.current) return
 
-    const deltaX = e.clientX - textDragStartRef.current.x
-    const deltaY = e.clientY - textDragStartRef.current.y
+    let deltaX = e.clientX - textDragStartRef.current.x
+    let deltaY = e.clientY - textDragStartRef.current.y
+    
+    // Apply rotation transformation to deltas if image is rotated
+    if (rotation !== 0) {
+      const angleRad = (-rotation * Math.PI) / 180
+      const rotatedDeltaX = deltaX * Math.cos(angleRad) - deltaY * Math.sin(angleRad)
+      const rotatedDeltaY = deltaX * Math.sin(angleRad) + deltaY * Math.cos(angleRad)
+      deltaX = rotatedDeltaX
+      deltaY = rotatedDeltaY
+    }
 
     setTextElements(
       textElements.map((t) => {
@@ -491,11 +573,38 @@ export default function ImageEditor() {
     if (!isCropMode || !isDraggingCrop || !cropArea || !dragHandle) return
 
     e.preventDefault()
-    const canvas = e.currentTarget as HTMLDivElement
-    const rect = canvas.getBoundingClientRect()
-    const x = e.clientX - rect.left
-    const y = e.clientY - rect.top
+    
+    // Use the outer wrapper ref for accurate coordinates with rotated images
+    const wrapper = canvasWrapperRef.current
+    if (!wrapper) return
+    
+    const rect = wrapper.getBoundingClientRect()
     const dimensions = getCanvasDimensions()
+    
+    // Get mouse position relative to the wrapper (accounts for rotation layout)
+    let x = e.clientX - rect.left
+    let y = e.clientY - rect.top
+    
+    // Apply coordinate transformation for any rotation
+    if (rotation !== 0) {
+      const wrapperCenterX = rect.width / 2
+      const wrapperCenterY = rect.height / 2
+      const canvasCenterX = dimensions.width / 2
+      const canvasCenterY = dimensions.height / 2
+      
+      // Translate to wrapper center
+      const dx = x - wrapperCenterX
+      const dy = y - wrapperCenterY
+      
+      // Apply inverse rotation transformation
+      const angleRad = (-rotation * Math.PI) / 180
+      const rotatedX = dx * Math.cos(angleRad) - dy * Math.sin(angleRad)
+      const rotatedY = dx * Math.sin(angleRad) + dy * Math.cos(angleRad)
+      
+      // Translate to canvas space
+      x = rotatedX + canvasCenterX
+      y = rotatedY + canvasCenterY
+    }
 
     const newCropArea = { ...cropArea }
     const minSize = 30
@@ -693,6 +802,8 @@ export default function ImageEditor() {
             active={false}
             onClick={() => {
               if (uploadedImage) {
+                setAddingTextAt(null) // Clear any pending text input
+                setSelectedTextId(null)
                 rotateImage(90)
               }
             }}
@@ -703,6 +814,11 @@ export default function ImageEditor() {
             active={isCropMode && uploadedImage !== null}
             onClick={() => {
               if (uploadedImage && !isCropMode) {
+                // Turn off other modes when activating crop
+                setIsDrawMode(false)
+                setIsTextMode(false)
+                setAddingTextAt(null) // Clear any pending text input
+                setSelectedTextId(null)
                 initiateCrop()
               } else if (isCropMode) {
                 cancelCrop()
@@ -718,6 +834,11 @@ export default function ImageEditor() {
                 setIsDrawMode(!isDrawMode)
                 setIsTextMode(false)
                 setIsCropMode(false)
+                setAddingTextAt(null) // Clear any pending text input
+                setSelectedTextId(null)
+                if (isCropMode) {
+                  cancelCrop()
+                }
               }
             }}
           />
@@ -730,6 +851,10 @@ export default function ImageEditor() {
                 setIsTextMode(!isTextMode)
                 setIsDrawMode(false)
                 setIsCropMode(false)
+                setAddingTextAt(null) // Clear any pending text input
+                if (isCropMode) {
+                  cancelCrop()
+                }
               }
             }}
           />
@@ -804,60 +929,58 @@ export default function ImageEditor() {
               )}
               {isTextMode && uploadedImage && (
                 <>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground">
-                      {selectedTextId ? "Editing selected text" : "Click to add text • Double-click to edit"}
-                    </span>
-                  </div>
-                  <div className="h-6 w-px bg-border" />
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground">Font:</span>
-                    <select
-                      value={textFont}
-                      onChange={(e) => {
-                        setTextFont(e.target.value)
-                        if (selectedTextId) setTimeout(updateSelectedTextProperties, 0)
-                      }}
-                      className="text-xs bg-card border border-border rounded px-2 py-1 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                    >
-                      {FONTS.map((font) => (
-                        <option key={font} value={font}>
-                          {font}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="h-6 w-px bg-border" />
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground">Size:</span>
-                    <input
-                      type="range"
-                      min="8"
-                      max="72"
-                      value={textFontSize}
-                      onChange={(e) => {
-                        setTextFontSize(Number(e.target.value))
-                        if (selectedTextId) setTimeout(updateSelectedTextProperties, 0)
-                      }}
-                      className="w-24"
-                    />
-                    <span className="text-xs text-muted-foreground">{textFontSize}px</span>
-                  </div>
-                  <div className="h-6 w-px bg-border" />
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground">Color:</span>
-                    <input
-                      type="color"
-                      value={textColor}
-                      onChange={(e) => {
-                        setTextColor(e.target.value)
-                        if (selectedTextId) setTimeout(updateSelectedTextProperties, 0)
-                      }}
-                      className="w-8 h-8 rounded cursor-pointer border border-border"
-                    />
-                  </div>
-                  {selectedTextId && (
+                  {selectedTextId ? (
                     <>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground font-medium">Editing Text:</span>
+                      </div>
+                      <div className="h-6 w-px bg-border" />
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground">Font:</span>
+                        <select
+                          value={textFont}
+                          onChange={(e) => {
+                            setTextFont(e.target.value)
+                            setTimeout(updateSelectedTextProperties, 0)
+                          }}
+                          className="text-xs bg-card border border-border rounded px-2 py-1 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                        >
+                          {FONTS.map((font) => (
+                            <option key={font} value={font}>
+                              {font}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="h-6 w-px bg-border" />
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground">Size:</span>
+                        <input
+                          type="range"
+                          min="8"
+                          max="72"
+                          value={textFontSize}
+                          onChange={(e) => {
+                            setTextFontSize(Number(e.target.value))
+                            setTimeout(updateSelectedTextProperties, 0)
+                          }}
+                          className="w-24"
+                        />
+                        <span className="text-xs text-muted-foreground">{textFontSize}px</span>
+                      </div>
+                      <div className="h-6 w-px bg-border" />
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground">Color:</span>
+                        <input
+                          type="color"
+                          value={textColor}
+                          onChange={(e) => {
+                            setTextColor(e.target.value)
+                            setTimeout(updateSelectedTextProperties, 0)
+                          }}
+                          className="w-8 h-8 rounded cursor-pointer border border-border"
+                        />
+                      </div>
                       <div className="h-6 w-px bg-border" />
                       <Button
                         size="sm"
@@ -866,8 +989,52 @@ export default function ImageEditor() {
                           if (selectedTextId) deleteTextElement(selectedTextId)
                         }}
                       >
-                        Delete
+                        Delete Text
                       </Button>
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground">Click on canvas to add text, or click existing text to edit it</span>
+                      </div>
+                      <div className="h-6 w-px bg-border" />
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground">Font:</span>
+                        <select
+                          value={textFont}
+                          onChange={(e) => setTextFont(e.target.value)}
+                          className="text-xs bg-card border border-border rounded px-2 py-1 text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                        >
+                          {FONTS.map((font) => (
+                            <option key={font} value={font}>
+                              {font}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="h-6 w-px bg-border" />
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground">Size:</span>
+                        <input
+                          type="range"
+                          min="8"
+                          max="72"
+                          value={textFontSize}
+                          onChange={(e) => setTextFontSize(Number(e.target.value))}
+                          className="w-24"
+                        />
+                        <span className="text-xs text-muted-foreground">{textFontSize}px</span>
+                      </div>
+                      <div className="h-6 w-px bg-border" />
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground">Color:</span>
+                        <input
+                          type="color"
+                          value={textColor}
+                          onChange={(e) => setTextColor(e.target.value)}
+                          className="w-8 h-8 rounded cursor-pointer border border-border"
+                        />
+                      </div>
                     </>
                   )}
                 </>
@@ -947,6 +1114,7 @@ export default function ImageEditor() {
               {/* Image Canvas */}
               {uploadedImage ? (
                 <div
+                  ref={canvasWrapperRef}
                   className="relative flex-shrink-0"
                   style={{
                     // Calculate dimensions that account for rotation
@@ -959,6 +1127,10 @@ export default function ImageEditor() {
                         ? `${canvasDimensions.width}px`
                         : `${canvasDimensions.height}px`,
                   }}
+                  onMouseMove={isCropMode ? handleCropMouseMove : undefined}
+                  onMouseUp={isCropMode ? handleCropMouseUp : undefined}
+                  onMouseLeave={isCropMode ? handleCropMouseUp : undefined}
+                  onClick={isTextMode ? handleCanvasClick : undefined}
                 >
                   <div
                     className={`absolute border-2 ${
@@ -980,16 +1152,13 @@ export default function ImageEditor() {
                       top: "50%",
                       marginLeft: `-${canvasDimensions.width / 2}px`,
                       marginTop: `-${canvasDimensions.height / 2}px`,
+                      pointerEvents: isTextMode ? "none" : "auto",
                     }}
-                    onMouseMove={isCropMode ? handleCropMouseMove : undefined}
-                    onMouseUp={isCropMode ? handleCropMouseUp : undefined}
-                    onMouseLeave={isCropMode ? handleCropMouseUp : undefined}
-                    onClick={isTextMode ? handleCanvasClick : undefined}
                   >
                   <img
                     src={uploadedImage || "/placeholder.svg"}
                     alt="Uploaded"
-                    className="w-full h-full object-cover"
+                    className="w-full h-full object-cover pointer-events-none"
                   />
                   <canvas
                     ref={drawingCanvasRef}
@@ -1000,104 +1169,94 @@ export default function ImageEditor() {
                     className={`absolute inset-0 ${isDrawMode ? "block" : "hidden"}`}
                     style={{
                       cursor: isDrawMode ? "crosshair" : "default",
+                      pointerEvents: isDrawMode ? "auto" : "none",
                     }}
                   />
 
                   {textElements.map((textEl) => (
                     <div
                       key={textEl.id}
-                      className={`absolute group ${selectedTextId === textEl.id && editingTextId !== textEl.id ? "ring-2 ring-primary rounded" : ""}`}
+                      className={`absolute group ${selectedTextId === textEl.id ? "ring-2 ring-primary rounded" : ""}`}
                       style={{
                         left: `${textEl.x}px`,
                         top: `${textEl.y}px`,
-                        cursor: 
-                          editingTextId === textEl.id ? "text" :
-                          isTextMode ? (draggingTextId === textEl.id ? "grabbing" : "pointer") : "default",
+                        cursor: isTextMode ? (draggingTextId === textEl.id ? "grabbing" : "pointer") : "default",
                         padding: "2px",
+                        pointerEvents: "auto",
+                        // Counter-rotate text to keep it upright when in text mode
+                        transform: isTextMode ? `rotate(${-rotation}deg)` : "none",
+                        transformOrigin: "center",
                       }}
                       onClick={(e) => {
-                        if (isTextMode && !draggingTextId && editingTextId !== textEl.id) {
+                        if (isTextMode && !draggingTextId) {
                           handleTextClick(e, textEl.id)
                         }
                       }}
-                      onDoubleClick={(e) => isTextMode && handleTextDoubleClick(e, textEl.id)}
                       onMouseDown={(e) => {
-                        if (isTextMode && selectedTextId === textEl.id && editingTextId !== textEl.id) {
+                        if (isTextMode && selectedTextId === textEl.id) {
                           handleTextMouseDown(e, textEl.id)
                         }
                       }}
-                      onMouseUp={isTextMode && editingTextId !== textEl.id ? handleTextMouseUp : undefined}
+                      onMouseUp={isTextMode ? handleTextMouseUp : undefined}
                     >
-                      {editingTextId === textEl.id ? (
-                        <div
-                          contentEditable
-                          suppressContentEditableWarning
-                          onInput={(e) => handleTextEdit(textEl.id, e.currentTarget.textContent || "")}
-                          onBlur={finishEditingText}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" && !e.shiftKey) {
-                              e.preventDefault()
-                              finishEditingText()
-                            } else if (e.key === "Escape") {
-                              finishEditingText()
-                            }
-                          }}
-                          style={{
-                            color: textEl.color,
-                            fontSize: `${textEl.fontSize}px`,
-                            fontFamily: textEl.font,
-                            whiteSpace: "nowrap",
-                            textShadow: "0 0 2px rgba(0,0,0,0.8)",
-                            outline: "2px solid rgba(99, 102, 241, 0.8)",
-                            outlineOffset: "2px",
-                            minWidth: "50px",
-                            background: "rgba(0, 0, 0, 0.2)",
-                            padding: "2px 4px",
-                            borderRadius: "2px",
-                          }}
-                          ref={(el) => {
-                            if (el && editingTextId === textEl.id) {
-                              el.focus()
-                              // Only select all text if it's the placeholder "Type here..."
-                              if (textEl.text === "Type here...") {
-                                setTimeout(() => {
-                                  const range = document.createRange()
-                                  range.selectNodeContents(el)
-                                  const selection = window.getSelection()
-                                  selection?.removeAllRanges()
-                                  selection?.addRange(range)
-                                }, 0)
-                              } else {
-                                // For existing text, just place cursor at the end
-                                setTimeout(() => {
-                                  const range = document.createRange()
-                                  const selection = window.getSelection()
-                                  range.selectNodeContents(el)
-                                  range.collapse(false) // false means collapse to end
-                                  selection?.removeAllRanges()
-                                  selection?.addRange(range)
-                                }, 0)
-                              }
-                            }
-                          }}
-                        >
-                          {textEl.text}
-                        </div>
-                      ) : (
-                        <div
-                          style={{
-                            color: textEl.color,
-                            fontSize: `${textEl.fontSize}px`,
-                            fontFamily: textEl.font,
-                            whiteSpace: "nowrap",
-                            textShadow: "0 0 2px rgba(0,0,0,0.8)",
-                          }}
-                        >
-                          {textEl.text}
-                        </div>
-                      )}
+                      <div
+                        style={{
+                          color: textEl.color,
+                          fontSize: `${textEl.fontSize}px`,
+                          fontFamily: textEl.font,
+                          whiteSpace: "nowrap",
+                          textShadow: "0 0 2px rgba(0,0,0,0.8)",
+                        }}
+                      >
+                        {textEl.text}
+                      </div>
                     </div>
                   ))}
+
+                  {/* Inline text input when adding new text */}
+                  {isTextMode && addingTextAt && (
+                    <div
+                      className="absolute z-10"
+                      style={{
+                        left: `${addingTextAt.x}px`,
+                        top: `${addingTextAt.y}px`,
+                        pointerEvents: "auto",
+                        // Counter-rotate to keep input upright when image is rotated
+                        transform: `rotate(${-rotation}deg)`,
+                        transformOrigin: "center",
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div className="flex items-center gap-2 bg-card border-2 border-primary rounded px-2 py-1 shadow-lg">
+                        <input
+                          type="text"
+                          value={newTextInput}
+                          onChange={(e) => setNewTextInput(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" && newTextInput.trim()) {
+                              confirmAddText()
+                            } else if (e.key === "Escape") {
+                              cancelAddText()
+                            }
+                          }}
+                          placeholder="Type text..."
+                          autoFocus
+                          className="text-xs bg-transparent border-none outline-none text-foreground w-48"
+                          style={{
+                            fontSize: `${textFontSize}px`,
+                            fontFamily: textFont,
+                            color: textColor,
+                          }}
+                        />
+                        <Button size="sm" className="h-6 px-2 text-xs" onClick={confirmAddText}>
+                          <Check className="w-3 h-3" />
+                        </Button>
+                        <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={cancelAddText}>
+                          <X className="w-3 h-3" />
+                        </Button>
+                      </div>
+                    </div>
+                  )}
 
                   {isCropMode && cropArea && (
                     <>
@@ -1112,7 +1271,6 @@ export default function ImageEditor() {
                           cursor: "move",
                         }}
                         onMouseDown={(e) => handleCropMouseDown(e, "move")}
-                        onMouseMove={handleCropMouseMove}
                       >
                         {/* NW Corner */}
                         <div
@@ -1121,7 +1279,6 @@ export default function ImageEditor() {
                             e.stopPropagation()
                             handleCropMouseDown(e, "nw")
                           }}
-                          onMouseMove={handleCropMouseMove}
                         />
                         {/* NE Corner */}
                         <div
@@ -1130,7 +1287,6 @@ export default function ImageEditor() {
                             e.stopPropagation()
                             handleCropMouseDown(e, "ne")
                           }}
-                          onMouseMove={handleCropMouseMove}
                         />
                         {/* SW Corner */}
                         <div
@@ -1139,7 +1295,6 @@ export default function ImageEditor() {
                             e.stopPropagation()
                             handleCropMouseDown(e, "sw")
                           }}
-                          onMouseMove={handleCropMouseMove}
                         />
                         {/* SE Corner */}
                         <div
@@ -1148,7 +1303,6 @@ export default function ImageEditor() {
                             e.stopPropagation()
                             handleCropMouseDown(e, "se")
                           }}
-                          onMouseMove={handleCropMouseMove}
                         />
                       </div>
                     </>
@@ -1309,11 +1463,10 @@ export default function ImageEditor() {
                 <div className="space-y-2">
                   <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">How to Use</label>
                   <ul className="text-xs text-muted-foreground space-y-1 list-disc list-inside">
-                    <li>Click on canvas to add text</li>
-                    <li>Type directly, press Enter to finish</li>
-                    <li>Double-click text to edit</li>
-                    <li>Single-click to select</li>
-                    <li>Drag to move text</li>
+                    <li>Click anywhere on canvas to add text</li>
+                    <li>Type and press Enter to confirm</li>
+                    <li>Click on text to select and edit properties</li>
+                    <li>Drag selected text to reposition</li>
                   </ul>
                 </div>
 
@@ -1322,11 +1475,11 @@ export default function ImageEditor() {
                     <label className="text-xs font-medium text-primary uppercase tracking-wide">
                       Selected Text
                     </label>
-                    <p className="text-xs text-foreground truncate">
+                    <p className="text-xs text-foreground">
                       {textElements.find((t) => t.id === selectedTextId)?.text}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      Adjust font, size, and color in toolbar above
+                      Use toolbar to change font, size, and color
                     </p>
                   </div>
                 )}
