@@ -348,6 +348,48 @@ export default function ImageEditor() {
     }
   }
 
+  const handleTouchStart = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    if (!isDrawMode) return
+    e.preventDefault()
+    setIsDrawing(true)
+    const canvas = drawingCanvasRef.current
+    if (!canvas) return
+
+    const wrapper = canvasWrapperRef.current
+    if (!wrapper) return
+    
+    const wrapperRect = wrapper.getBoundingClientRect()
+    const dimensions = getCanvasDimensions()
+    
+    const touch = e.touches[0]
+    let x = touch.clientX - wrapperRect.left
+    let y = touch.clientY - wrapperRect.top
+    
+    // Apply coordinate transformation for rotation
+    if (rotation !== 0) {
+      const wrapperCenterX = wrapperRect.width / 2
+      const wrapperCenterY = wrapperRect.height / 2
+      const canvasCenterX = dimensions.width / 2
+      const canvasCenterY = dimensions.height / 2
+      
+      const dx = x - wrapperCenterX
+      const dy = y - wrapperCenterY
+      
+      const angleRad = (-rotation * Math.PI) / 180
+      const rotatedX = dx * Math.cos(angleRad) - dy * Math.sin(angleRad)
+      const rotatedY = dx * Math.sin(angleRad) + dy * Math.cos(angleRad)
+      
+      x = rotatedX + canvasCenterX
+      y = rotatedY + canvasCenterY
+    }
+
+    const ctx = canvas.getContext("2d")
+    if (ctx) {
+      ctx.beginPath()
+      ctx.moveTo(x, y)
+    }
+  }
+
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!isDrawing || !isDrawMode) return
     const canvas = drawingCanvasRef.current
@@ -395,7 +437,56 @@ export default function ImageEditor() {
     }
   }
 
+  const handleTouchMove = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    if (!isDrawing || !isDrawMode) return
+    e.preventDefault()
+    const canvas = drawingCanvasRef.current
+    if (!canvas) return
+
+    const wrapper = canvasWrapperRef.current
+    if (!wrapper) return
+    
+    const wrapperRect = wrapper.getBoundingClientRect()
+    const dimensions = getCanvasDimensions()
+    
+    const touch = e.touches[0]
+    let x = touch.clientX - wrapperRect.left
+    let y = touch.clientY - wrapperRect.top
+    
+    // Apply coordinate transformation for rotation
+    if (rotation !== 0) {
+      const wrapperCenterX = wrapperRect.width / 2
+      const wrapperCenterY = wrapperRect.height / 2
+      const canvasCenterX = dimensions.width / 2
+      const canvasCenterY = dimensions.height / 2
+      
+      const dx = x - wrapperCenterX
+      const dy = y - wrapperCenterY
+      
+      const angleRad = (-rotation * Math.PI) / 180
+      const rotatedX = dx * Math.cos(angleRad) - dy * Math.sin(angleRad)
+      const rotatedY = dx * Math.sin(angleRad) + dy * Math.cos(angleRad)
+      
+      x = rotatedX + canvasCenterX
+      y = rotatedY + canvasCenterY
+    }
+
+    const ctx = canvas.getContext("2d")
+    if (ctx) {
+      ctx.strokeStyle = brushColor
+      ctx.lineWidth = brushSize
+      ctx.lineCap = "round"
+      ctx.lineJoin = "round"
+      ctx.lineTo(x, y)
+      ctx.stroke()
+    }
+  }
+
   const handleMouseUp = () => {
+    setIsDrawing(false)
+  }
+
+  const handleTouchEnd = () => {
     setIsDrawing(false)
   }
 
@@ -436,6 +527,44 @@ export default function ImageEditor() {
     }
 
     // Start adding text at this position
+    setAddingTextAt({ x, y })
+    setNewTextInput("")
+    setSelectedTextId(null)
+  }
+
+  const handleCanvasTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (!isTextMode || addingTextAt) return
+    
+    e.stopPropagation()
+    
+    const wrapper = canvasWrapperRef.current
+    if (!wrapper) return
+    
+    const wrapperRect = wrapper.getBoundingClientRect()
+    const dimensions = getCanvasDimensions()
+    
+    const touch = e.touches[0]
+    let x = touch.clientX - wrapperRect.left
+    let y = touch.clientY - wrapperRect.top
+    
+    // Apply coordinate transformation for rotation
+    if (rotation !== 0) {
+      const wrapperCenterX = wrapperRect.width / 2
+      const wrapperCenterY = wrapperRect.height / 2
+      const canvasCenterX = dimensions.width / 2
+      const canvasCenterY = dimensions.height / 2
+      
+      const dx = x - wrapperCenterX
+      const dy = y - wrapperCenterY
+      
+      const angleRad = (-rotation * Math.PI) / 180
+      const rotatedX = dx * Math.cos(angleRad) - dy * Math.sin(angleRad)
+      const rotatedY = dx * Math.sin(angleRad) + dy * Math.cos(angleRad)
+      
+      x = rotatedX + canvasCenterX
+      y = rotatedY + canvasCenterY
+    }
+
     setAddingTextAt({ x, y })
     setNewTextInput("")
     setSelectedTextId(null)
@@ -643,6 +772,90 @@ export default function ImageEditor() {
   }
 
   const handleCropMouseUp = () => {
+    setIsDraggingCrop(false)
+    setDragHandle(null)
+    cropDragStartRef.current = null
+  }
+
+  const handleCropTouchStart = (e: React.TouchEvent<HTMLDivElement>, handle?: string) => {
+    if (!isCropMode) return
+    e.preventDefault()
+    setIsDraggingCrop(true)
+    setDragHandle(handle || "move")
+    const touch = e.touches[0]
+    cropDragStartRef.current = { x: touch.clientX, y: touch.clientY }
+  }
+
+  const handleCropTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (!isCropMode || !isDraggingCrop || !cropArea || !dragHandle) return
+
+    e.preventDefault()
+    
+    const wrapper = canvasWrapperRef.current
+    if (!wrapper) return
+    
+    const rect = wrapper.getBoundingClientRect()
+    const dimensions = getCanvasDimensions()
+    
+    const touch = e.touches[0]
+    let x = touch.clientX - rect.left
+    let y = touch.clientY - rect.top
+    
+    // Apply coordinate transformation for any rotation
+    if (rotation !== 0) {
+      const wrapperCenterX = rect.width / 2
+      const wrapperCenterY = rect.height / 2
+      const canvasCenterX = dimensions.width / 2
+      const canvasCenterY = dimensions.height / 2
+      
+      const dx = x - wrapperCenterX
+      const dy = y - wrapperCenterY
+      
+      const angleRad = (-rotation * Math.PI) / 180
+      const rotatedX = dx * Math.cos(angleRad) - dy * Math.sin(angleRad)
+      const rotatedY = dx * Math.sin(angleRad) + dy * Math.cos(angleRad)
+      
+      x = rotatedX + canvasCenterX
+      y = rotatedY + canvasCenterY
+    }
+
+    const newCropArea = { ...cropArea }
+    const minSize = 30
+
+    if (dragHandle === "move") {
+      const deltaX = x - (cropArea.x + cropArea.width / 2)
+      const deltaY = y - (cropArea.y + cropArea.height / 2)
+      newCropArea.x = Math.max(0, Math.min(cropArea.x + deltaX, dimensions.width - cropArea.width))
+      newCropArea.y = Math.max(0, Math.min(cropArea.y + deltaY, dimensions.height - cropArea.height))
+    } else if (dragHandle === "nw") {
+      newCropArea.x = Math.max(0, Math.min(x, cropArea.x + cropArea.width - minSize))
+      newCropArea.y = Math.max(0, Math.min(y, cropArea.y + cropArea.height - minSize))
+      newCropArea.width = Math.max(minSize, cropArea.x + cropArea.width - newCropArea.x)
+      newCropArea.height = Math.max(minSize, cropArea.y + cropArea.height - newCropArea.y)
+    } else if (dragHandle === "ne") {
+      newCropArea.x = Math.max(0, Math.min(cropArea.x, x - minSize))
+      newCropArea.y = Math.max(0, Math.min(y, cropArea.y + cropArea.height - minSize))
+      newCropArea.width = Math.max(minSize, x - newCropArea.x)
+      newCropArea.height = Math.max(minSize, cropArea.y + cropArea.height - newCropArea.y)
+    } else if (dragHandle === "sw") {
+      newCropArea.x = Math.max(0, Math.min(x, cropArea.x + cropArea.width - minSize))
+      newCropArea.y = Math.max(0, Math.min(cropArea.y, y - minSize))
+      newCropArea.width = Math.max(minSize, cropArea.x + cropArea.width - newCropArea.x)
+      newCropArea.height = Math.max(minSize, y - newCropArea.y)
+    } else if (dragHandle === "se") {
+      newCropArea.width = Math.max(minSize, x - cropArea.x)
+      newCropArea.height = Math.max(minSize, y - cropArea.y)
+    }
+
+    newCropArea.x = Math.max(0, Math.min(newCropArea.x, dimensions.width - minSize))
+    newCropArea.y = Math.max(0, Math.min(newCropArea.y, dimensions.height - minSize))
+    newCropArea.width = Math.min(newCropArea.width, dimensions.width - newCropArea.x)
+    newCropArea.height = Math.min(newCropArea.height, dimensions.height - newCropArea.y)
+
+    setCropArea(newCropArea)
+  }
+
+  const handleCropTouchEnd = () => {
     setIsDraggingCrop(false)
     setDragHandle(null)
     cropDragStartRef.current = null
@@ -1131,6 +1344,9 @@ export default function ImageEditor() {
                   onMouseUp={isCropMode ? handleCropMouseUp : undefined}
                   onMouseLeave={isCropMode ? handleCropMouseUp : undefined}
                   onClick={isTextMode ? handleCanvasClick : undefined}
+                  onTouchMove={isCropMode ? handleCropTouchMove : undefined}
+                  onTouchEnd={isCropMode ? handleCropTouchEnd : undefined}
+                  onTouchStart={isTextMode ? handleCanvasTouchStart : undefined}
                 >
                   <div
                     className={`absolute border-2 ${
@@ -1166,10 +1382,14 @@ export default function ImageEditor() {
                     onMouseMove={handleMouseMove}
                     onMouseUp={handleMouseUp}
                     onMouseLeave={handleMouseUp}
+                    onTouchStart={handleTouchStart}
+                    onTouchMove={handleTouchMove}
+                    onTouchEnd={handleTouchEnd}
                     className={`absolute inset-0 ${isDrawMode ? "block" : "hidden"}`}
                     style={{
                       cursor: isDrawMode ? "crosshair" : "default",
                       pointerEvents: isDrawMode ? "auto" : "none",
+                      touchAction: "none",
                     }}
                   />
 
@@ -1269,39 +1489,57 @@ export default function ImageEditor() {
                           width: `${cropArea.width}px`,
                           height: `${cropArea.height}px`,
                           cursor: "move",
+                          touchAction: "none",
                         }}
                         onMouseDown={(e) => handleCropMouseDown(e, "move")}
+                        onTouchStart={(e) => handleCropTouchStart(e, "move")}
                       >
                         {/* NW Corner */}
                         <div
-                          className="absolute w-3 h-3 bg-yellow-400 rounded-full -top-1.5 -left-1.5 cursor-nwse-resize hover:scale-125 transition-transform"
+                          className="absolute w-4 h-4 bg-yellow-400 rounded-full -top-2 -left-2 cursor-nwse-resize hover:scale-125 transition-transform"
                           onMouseDown={(e) => {
                             e.stopPropagation()
                             handleCropMouseDown(e, "nw")
                           }}
+                          onTouchStart={(e) => {
+                            e.stopPropagation()
+                            handleCropTouchStart(e, "nw")
+                          }}
                         />
                         {/* NE Corner */}
                         <div
-                          className="absolute w-3 h-3 bg-yellow-400 rounded-full -top-1.5 -right-1.5 cursor-nesw-resize hover:scale-125 transition-transform"
+                          className="absolute w-4 h-4 bg-yellow-400 rounded-full -top-2 -right-2 cursor-nesw-resize hover:scale-125 transition-transform"
                           onMouseDown={(e) => {
                             e.stopPropagation()
                             handleCropMouseDown(e, "ne")
                           }}
+                          onTouchStart={(e) => {
+                            e.stopPropagation()
+                            handleCropTouchStart(e, "ne")
+                          }}
                         />
                         {/* SW Corner */}
                         <div
-                          className="absolute w-3 h-3 bg-yellow-400 rounded-full -bottom-1.5 -left-1.5 cursor-nesw-resize hover:scale-125 transition-transform"
+                          className="absolute w-4 h-4 bg-yellow-400 rounded-full -bottom-2 -left-2 cursor-nesw-resize hover:scale-125 transition-transform"
                           onMouseDown={(e) => {
                             e.stopPropagation()
                             handleCropMouseDown(e, "sw")
                           }}
+                          onTouchStart={(e) => {
+                            e.stopPropagation()
+                            handleCropTouchStart(e, "sw")
+                          }}
                         />
                         {/* SE Corner */}
                         <div
-                          className="absolute w-3 h-3 bg-yellow-400 rounded-full -bottom-1.5 -right-1.5 cursor-nwse-resize hover:scale-125 transition-transform"
+                          className="absolute w-4 h-4 bg-yellow-400 rounded-full -bottom-2 -right-2 cursor-nwse-resize hover:scale-125 transition-transform"
                           onMouseDown={(e) => {
                             e.stopPropagation()
                             handleCropMouseDown(e, "se")
+                          }}
+                          onTouchStart={(e) => {
+                            e.stopPropagation()
+                            handleCropTouchStart(e, "se")
                           }}
                         />
                       </div>
